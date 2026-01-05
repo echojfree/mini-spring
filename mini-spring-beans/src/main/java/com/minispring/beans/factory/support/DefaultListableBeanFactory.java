@@ -1,8 +1,11 @@
 package com.minispring.beans.factory.support;
 
+import com.minispring.beans.PropertyValue;
+import com.minispring.beans.PropertyValues;
 import com.minispring.beans.exception.BeansException;
 import com.minispring.beans.factory.BeanFactory;
 import com.minispring.beans.factory.config.BeanDefinition;
+import com.minispring.beans.factory.config.BeanReference;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -199,13 +202,15 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
     /**
      * 创建 Bean 实例
      * <p>
-     * 使用实例化策略创建 Bean 实例
-     * 后续会增强：
-     * 1. 支持构造器注入
-     * 2. 支持属性注入
-     * 3. 支持初始化方法调用
+     * 完整的 Bean 创建流程（面试重点）：
+     * 1. 实例化：创建 Bean 实例
+     * 2. 属性注入：填充 Bean 的属性值
+     * 3. 初始化：调用初始化方法（后续实现）
      * <p>
-     * 面试考点：Bean 的实例化过程
+     * 面试考点：
+     * 1. Bean 的完整生命周期
+     * 2. 实例化和初始化的区别
+     * 3. 属性注入的时机
      *
      * @param beanName       Bean 名称
      * @param beanDefinition Bean 定义
@@ -213,9 +218,74 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * @throws BeansException 创建失败
      */
     protected Object createBean(String beanName, BeanDefinition beanDefinition) throws BeansException {
-        // 使用实例化策略创建 Bean 实例
-        // 面试考点：策略模式的应用
-        return instantiationStrategy.instantiate(beanDefinition);
+        // 步骤1：实例化 Bean
+        Object bean = instantiationStrategy.instantiate(beanDefinition);
+
+        // 步骤2：属性注入
+        applyPropertyValues(beanName, bean, beanDefinition);
+
+        // 后续步骤（待实现）：
+        // 步骤3：Aware 接口回调
+        // 步骤4：BeanPostProcessor 前置处理
+        // 步骤5：初始化方法调用
+        // 步骤6：BeanPostProcessor 后置处理
+
+        return bean;
+    }
+
+    /**
+     * 属性注入：为 Bean 填充属性值
+     * <p>
+     * 核心流程（面试重点）：
+     * 1. 获取 BeanDefinition 中的所有属性值
+     * 2. 遍历每个属性值：
+     *    - 如果是 BeanReference，通过 getBean 获取引用的 Bean
+     *    - 如果是普通值，直接使用
+     * 3. 使用反射设置属性值
+     * <p>
+     * 面试考点：
+     * 1. 依赖注入的实现原理
+     * 2. 如何区分 Bean 引用和普通值
+     * 3. 反射设置属性的过程
+     * 4. 循环依赖问题（当前版本会出现，后续解决）
+     *
+     * @param beanName       Bean 名称
+     * @param bean           Bean 实例
+     * @param beanDefinition Bean 定义
+     */
+    protected void applyPropertyValues(String beanName, Object bean, BeanDefinition beanDefinition) {
+        try {
+            // 获取属性值集合
+            PropertyValues propertyValues = beanDefinition.getPropertyValues();
+            if (propertyValues == null || propertyValues.isEmpty()) {
+                // 没有属性需要注入
+                return;
+            }
+
+            // 遍历所有属性值
+            for (PropertyValue propertyValue : propertyValues.getPropertyValues()) {
+                String name = propertyValue.getName();
+                Object value = propertyValue.getValue();
+
+                // 处理 Bean 引用
+                // 面试考点：依赖注入的核心逻辑
+                if (value instanceof BeanReference) {
+                    BeanReference beanReference = (BeanReference) value;
+                    // 获取引用的 Bean
+                    // 这里可能会触发循环依赖问题
+                    value = getBean(beanReference.getBeanName());
+                }
+
+                // 使用反射设置属性值
+                // 面试考点：反射的应用
+                java.beans.PropertyDescriptor pd = new java.beans.PropertyDescriptor(name, bean.getClass());
+                java.lang.reflect.Method writeMethod = pd.getWriteMethod();
+                writeMethod.invoke(bean, value);
+            }
+
+        } catch (Exception e) {
+            throw new BeansException("属性注入失败: " + beanName, e);
+        }
     }
 
     /**

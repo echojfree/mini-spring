@@ -1,5 +1,7 @@
 package com.minispring.beans.factory.config;
 
+import com.minispring.beans.PropertyValues;
+
 /**
  * Bean 定义：存储 Bean 的元数据信息
  * <p>
@@ -26,6 +28,20 @@ public class BeanDefinition {
      * 用于反射创建 Bean 实例
      */
     private Class<?> beanClass;
+
+    /**
+     * Bean 的属性值集合
+     * 用于依赖注入
+     * <p>
+     * 面试考点：
+     * 1. 属性注入的时机？
+     *    - 实例化之后，初始化之前
+     * 2. 属性注入的方式？
+     *    - Setter 注入（当前实现）
+     *    - 构造器注入（后续扩展）
+     *    - 字段注入（后续扩展）
+     */
+    private PropertyValues propertyValues;
 
     /**
      * Bean 的作用域：singleton（单例）或 prototype（原型）
@@ -87,7 +103,19 @@ public class BeanDefinition {
      * @param beanClass Bean 的 Class
      */
     public BeanDefinition(Class<?> beanClass) {
+        this(beanClass, null);
+    }
+
+    /**
+     * 构造函数：通过 Class 和属性值创建 BeanDefinition
+     *
+     * @param beanClass      Bean 的 Class
+     * @param propertyValues 属性值集合
+     */
+    public BeanDefinition(Class<?> beanClass, PropertyValues propertyValues) {
         this.beanClass = beanClass;
+        // 如果没有传入属性值，创建一个空的集合
+        this.propertyValues = propertyValues != null ? propertyValues : new PropertyValues();
     }
 
     // ==================== Getter/Setter ====================
@@ -178,6 +206,20 @@ public class BeanDefinition {
      */
     public void setDestroyMethodName(String destroyMethodName) {
         this.destroyMethodName = destroyMethodName;
+    }
+
+    /**
+     * 获取属性值集合
+     */
+    public PropertyValues getPropertyValues() {
+        return propertyValues;
+    }
+
+    /**
+     * 设置属性值集合
+     */
+    public void setPropertyValues(PropertyValues propertyValues) {
+        this.propertyValues = propertyValues;
     }
 
 }
