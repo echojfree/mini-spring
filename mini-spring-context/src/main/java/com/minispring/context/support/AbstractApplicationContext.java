@@ -5,7 +5,13 @@ import com.minispring.beans.factory.config.BeanFactoryPostProcessor;
 import com.minispring.beans.factory.config.BeanDefinitionRegistryPostProcessor;
 import com.minispring.beans.factory.config.BeanPostProcessor;
 import com.minispring.beans.factory.support.DefaultListableBeanFactory;
+import com.minispring.context.ApplicationEvent;
+import com.minispring.context.ApplicationListener;
 import com.minispring.context.ConfigurableApplicationContext;
+import com.minispring.context.event.ApplicationEventMulticaster;
+import com.minispring.context.event.ContextClosedEvent;
+import com.minispring.context.event.ContextRefreshedEvent;
+import com.minispring.context.event.SimpleApplicationEventMulticaster;
 
 /**
  * AbstractApplicationContext 抽象基类
@@ -16,16 +22,19 @@ import com.minispring.context.ConfigurableApplicationContext;
  * 设计模式：
  * - 模板方法模式：定义容器初始化的骨架，具体步骤由子类实现
  * - 门面模式：统一对外提供简单的接口
+ * - 观察者模式：支持事件发布和监听
  * <p>
  * 核心方法：
  * - refresh()：容器初始化的模板方法
  * - getBeanFactory()：获取内部的 BeanFactory
  * - close()：容器关闭
+ * - publishEvent()：发布事件
  * <p>
  * 面试考点：
  * 1. ApplicationContext 的初始化流程（refresh 方法）
  * 2. 模板方法模式在 Spring 中的应用
  * 3. BeanFactory 和 ApplicationContext 的关系
+ * 4. Spring 事件机制的实现原理
  *
  * @author mini-spring
  */
@@ -36,6 +45,12 @@ public abstract class AbstractApplicationContext implements ConfigurableApplicat
      * 实际的 Bean 管理工作委托给 BeanFactory
      */
     private DefaultListableBeanFactory beanFactory;
+
+    /**
+     * 事件广播器
+     * 负责管理监听器和广播事件
+     */
+    private ApplicationEventMulticaster applicationEventMulticaster;
 
     /**
      * 关闭钩子线程
@@ -53,13 +68,17 @@ public abstract class AbstractApplicationContext implements ConfigurableApplicat
      * 2. 加载 BeanDefinition（在 refreshBeanFactory 中完成）
      * 3. 调用 BeanFactoryPostProcessor（修改 BeanDefinition）
      * 4. 注册 BeanPostProcessor（为 Bean 实例化做准备）
-     * 5. 实例化所有单例 Bean（预加载）
+     * 5. 初始化事件广播器
+     * 6. 注册事件监听器
+     * 7. 实例化所有单例 Bean（预加载）
+     * 8. 发布容器刷新完成事件
      * <p>
      * 面试考点：
      * 1. refresh() 是容器初始化的模板方法
      * 2. BeanFactoryPostProcessor 在 Bean 实例化之前执行
      * 3. BeanPostProcessor 在 Bean 实例化之后执行
      * 4. ApplicationContext 会预加载所有单例 Bean
+     * 5. 事件机制的初始化时机
      *
      * @throws Exception 刷新失败时抛出异常
      */
@@ -79,9 +98,18 @@ public abstract class AbstractApplicationContext implements ConfigurableApplicat
         // BeanPostProcessor 需要在 Bean 实例化之前注册
         registerBeanPostProcessors(beanFactory);
 
-        // 步骤5：实例化所有单例 Bean（预加载）
+        // 步骤5：初始化事件广播器
+        initApplicationEventMulticaster();
+
+        // 步骤6：注册事件监听器
+        registerListeners();
+
+        // 步骤7：实例化所有单例 Bean（预加载）
         // 这是 ApplicationContext 和 BeanFactory 的重要区别
         beanFactory.preInstantiateSingletons();
+
+        // 步骤8：发布容器刷新完成事件
+        finishRefresh();
     }
 
     /**
@@ -245,6 +273,79 @@ public abstract class AbstractApplicationContext implements ConfigurableApplicat
         }
     }
 
+    /**
+     * 初始化事件广播器
+     * <p>
+     * 创建 ApplicationEventMulticaster 实例
+     * 负责管理监听器和广播事件
+     * <p>
+     * 面试考点：
+     * 1. 事件广播器的初始化时机
+     *    - 在 Bean 实例化之前初始化
+     *    - 确保事件监听器可以正常注册
+     * 2. 使用简单实现 SimpleApplicationEventMulticaster
+     *    - 同步广播事件
+     *    - 按注册顺序依次调用监听器
+     */
+    protected void initApplicationEventMulticaster() {
+        this.applicationEventMulticaster = new SimpleApplicationEventMulticaster();
+    }
+
+    /**
+     * 注册事件监听器
+     * <p>
+     * 从 BeanFactory 中找出所有实现了 ApplicationListener 接口的 Bean
+     * 并注册到事件广播器中
+     * <p>
+     * 面试考点：
+     * 1. 监听器的注册时机
+     *    - 在事件广播器初始化之后
+     *    - 在普通 Bean 实例化之前
+     * 2. 监听器本身也是 Bean
+     *    - 可以在配置文件中定义
+     *    - 容器会自动发现并注册
+     * 3. 支持泛型监听器
+     *    - 通过反射获取泛型类型
+     *    - 只接收匹配类型的事件
+     */
+    protected void registerListeners() {
+        // 获取所有 Bean 名称
+        String[] beanNames = getBeanFactory().getBeanDefinitionNames();
+
+        for (String beanName : beanNames) {
+            Object bean = null;
+            try {
+                bean = getBeanFactory().getBean(beanName);
+            } catch (BeansException e) {
+                // 忽略获取失败的 Bean
+                continue;
+            }
+
+            // 如果是 ApplicationListener，则注册
+            if (bean instanceof ApplicationListener) {
+                applicationEventMulticaster.addApplicationListener((ApplicationListener<?>) bean);
+            }
+        }
+    }
+
+    /**
+     * 完成刷新
+     * <p>
+     * 发布容器刷新完成事件
+     * <p>
+     * 面试考点：
+     * 1. ContextRefreshedEvent 的发布时机
+     *    - 所有 Bean 初始化完成后
+     *    - 容器完全可用时
+     * 2. 事件的用途
+     *    - 通知监听器容器已准备就绪
+     *    - 可以执行初始化后的操作
+     */
+    protected void finishRefresh() {
+        // 发布容器刷新完成事件
+        publishEvent(new ContextRefreshedEvent(this));
+    }
+
     // ==================== BeanFactory 接口实现 ====================
 
     /**
@@ -301,17 +402,48 @@ public abstract class AbstractApplicationContext implements ConfigurableApplicat
      * 优雅地关闭容器，释放所有资源
      * <p>
      * 主要步骤：
-     * 1. 销毁所有单例 Bean
-     * 2. 清理资源
+     * 1. 发布容器关闭事件
+     * 2. 销毁所有单例 Bean
+     * 3. 清理资源
      * <p>
      * 面试考点：
      * - 容器关闭时的清理顺序
      * - Bean 的销毁顺序（后创建的先销毁）
+     * - 事件的发布时机（在销毁 Bean 之前）
      */
     @Override
     public void close() {
+        // 发布容器关闭事件
+        publishEvent(new ContextClosedEvent(this));
+
         // 销毁所有单例 Bean
         getBeanFactory().destroySingletons();
+    }
+
+    /**
+     * 发布事件
+     * <p>
+     * 实现 ApplicationEventPublisher 接口
+     * 将事件委托给事件广播器处理
+     * <p>
+     * 面试考点：
+     * 1. 事件发布机制
+     *    - 同步发布（默认）
+     *    - 按注册顺序依次调用监听器
+     * 2. 异常处理
+     *    - 单个监听器异常不影响其他监听器
+     *    - 异常会被捕获并打印
+     * 3. 类型匹配
+     *    - 通过反射获取监听器的泛型类型
+     *    - 只通知匹配类型的监听器
+     *
+     * @param event 要发布的事件
+     */
+    @Override
+    public void publishEvent(ApplicationEvent event) {
+        if (applicationEventMulticaster != null) {
+            applicationEventMulticaster.multicastEvent(event);
+        }
     }
 
     /**

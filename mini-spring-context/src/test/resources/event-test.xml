@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans>
+    <!-- 事件监听器 -->
+    <bean id="emailNotificationListener" class="com.minispring.test.event.EmailNotificationListener"/>
+    <bean id="auditLogListener" class="com.minispring.test.event.AuditLogListener"/>
+    <bean id="contextRefreshedListener" class="com.minispring.test.event.ContextRefreshedListener"/>
+    <bean id="contextClosedListener" class="com.minispring.test.event.ContextClosedListener"/>
+</beans>

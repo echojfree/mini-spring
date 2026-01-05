@@ -5,7 +5,7 @@ import com.minispring.beans.factory.BeanFactory;
 /**
  * ApplicationContext 接口
  * <p>
- * Spring 的高级容器接口，继承自 BeanFactory
+ * Spring 的高级容器接口，继承自 BeanFactory 和 ApplicationEventPublisher
  * 提供了更多企业级功能
  * <p>
  * ApplicationContext vs BeanFactory（面试重点）：
@@ -42,7 +42,7 @@ import com.minispring.beans.factory.BeanFactory;
  *
  * @author mini-spring
  */
-public interface ApplicationContext extends BeanFactory {
+public interface ApplicationContext extends BeanFactory, ApplicationEventPublisher {
 
     /**
      * 刷新容器
