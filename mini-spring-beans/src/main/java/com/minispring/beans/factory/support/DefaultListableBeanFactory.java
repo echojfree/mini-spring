@@ -3,7 +3,10 @@ package com.minispring.beans.factory.support;
 import com.minispring.beans.PropertyValue;
 import com.minispring.beans.PropertyValues;
 import com.minispring.beans.exception.BeansException;
+import com.minispring.beans.factory.Aware;
 import com.minispring.beans.factory.BeanFactory;
+import com.minispring.beans.factory.BeanFactoryAware;
+import com.minispring.beans.factory.BeanNameAware;
 import com.minispring.beans.factory.DisposableBean;
 import com.minispring.beans.factory.InitializingBean;
 import com.minispring.beans.factory.config.BeanDefinition;
@@ -324,7 +327,7 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * 初始化 Bean
      * <p>
      * Bean 初始化流程（面试重点）：
-     * 1. 调用 Aware 接口方法（后续实现）
+     * 1. 调用 Aware 接口方法
      * 2. 调用 BeanPostProcessor 的前置处理方法（后续实现）
      * 3. 调用初始化方法：
      *    - 先调用 InitializingBean 接口的 afterPropertiesSet 方法
@@ -342,7 +345,10 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * @return 初始化后的 Bean 实例
      */
     protected Object initializeBean(String beanName, Object bean, BeanDefinition beanDefinition) {
-        // 步骤1：调用 InitializingBean 接口方法
+        // 步骤1：调用 Aware 接口方法
+        invokeAwareMethods(beanName, bean);
+
+        // 步骤2：调用 InitializingBean 接口方法
         if (bean instanceof InitializingBean) {
             try {
                 ((InitializingBean) bean).afterPropertiesSet();
@@ -351,7 +357,7 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
             }
         }
 
-        // 步骤2：调用自定义 init-method
+        // 步骤3：调用自定义 init-method
         String initMethodName = beanDefinition.getInitMethodName();
         if (initMethodName != null && !initMethodName.isEmpty()) {
             try {
@@ -363,6 +369,43 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
         }
 
         return bean;
+    }
+
+    /**
+     * 调用 Aware 接口方法
+     * <p>
+     * 按照特定顺序调用 Aware 接口：
+     * 1. BeanNameAware
+     * 2. BeanFactoryAware
+     * 3. ApplicationContextAware（后续实现）
+     * <p>
+     * 面试考点：
+     * 1. Aware 接口的调用时机
+     *    - 在属性注入之后
+     *    - 在 InitializingBean 之前
+     * 2. Aware 接口的调用顺序
+     *    - BeanNameAware → BeanFactoryAware → ApplicationContextAware
+     * 3. 为什么需要 Aware 接口？
+     *    - 让 Bean 能够感知容器环境
+     *    - 实现与容器的交互
+     *
+     * @param beanName Bean 名称
+     * @param bean     Bean 实例
+     */
+    private void invokeAwareMethods(String beanName, Object bean) {
+        if (bean instanceof Aware) {
+            // 1. BeanNameAware
+            if (bean instanceof BeanNameAware) {
+                ((BeanNameAware) bean).setBeanName(beanName);
+            }
+
+            // 2. BeanFactoryAware
+            if (bean instanceof BeanFactoryAware) {
+                ((BeanFactoryAware) bean).setBeanFactory(this);
+            }
+
+            // 3. ApplicationContextAware 将在 ApplicationContext 中实现
+        }
     }
 
     /**
