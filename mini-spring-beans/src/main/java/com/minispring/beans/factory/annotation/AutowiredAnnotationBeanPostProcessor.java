@@ -10,14 +10,15 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 /**
- * 处理 @Autowired 注解的 Bean 后置处理器
+ * 处理 @Autowired 和 @Value 注解的 Bean 后置处理器
  * <p>
  * 实现原理：
  * 1. 实现 InstantiationAwareBeanPostProcessor 接口
  * 2. 在 postProcessPropertyValues() 方法中处理依赖注入
  * 3. 使用反射扫描 Bean 的字段和方法
  * 4. 发现 @Autowired 注解后从容器中获取依赖
- * 5. 通过反射设置字段值或调用方法
+ * 5. 发现 @Value 注解后解析占位符并注入值
+ * 6. 通过反射设置字段值或调用方法
  * <p>
  * 面试重点：
  * 1. @Autowired 是如何工作的？
@@ -31,6 +32,10 @@ import java.lang.reflect.Method;
  * 3. @Autowired 如何按类型注入？
  *    - 通过 BeanFactory.getBean(type) 获取
  *    - 如果有多个候选 Bean，需要 @Qualifier 指定
+ * 4. @Value 如何工作？
+ *    - 解析 ${key} 占位符
+ *    - 支持默认值 ${key:defaultValue}
+ *    - 进行类型转换
  *
  * @author mini-spring
  */
@@ -38,9 +43,23 @@ public class AutowiredAnnotationBeanPostProcessor implements InstantiationAwareB
 
     private BeanFactory beanFactory;
 
+    /**
+     * PropertyPlaceholderConfigurer 用于解析 @Value 占位符
+     */
+    private com.minispring.beans.factory.config.PropertyPlaceholderConfigurer placeholderConfigurer;
+
     @Override
     public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
         this.beanFactory = beanFactory;
+    }
+
+    /**
+     * 设置属性占位符配置器
+     *
+     * @param placeholderConfigurer PropertyPlaceholderConfigurer 实例
+     */
+    public void setPlaceholderConfigurer(com.minispring.beans.factory.config.PropertyPlaceholderConfigurer placeholderConfigurer) {
+        this.placeholderConfigurer = placeholderConfigurer;
     }
 
     /**
@@ -59,7 +78,7 @@ public class AutowiredAnnotationBeanPostProcessor implements InstantiationAwareB
 
     /**
      * 处理字段注入
-     * 扫描类的所有字段，发现 @Autowired 注解后进行注入
+     * 扫描类的所有字段，发现 @Autowired 或 @Value 注解后进行注入
      */
     private void processFieldInjection(Object bean) {
         Class<?> clazz = bean.getClass();
@@ -99,8 +118,83 @@ public class AutowiredAnnotationBeanPostProcessor implements InstantiationAwareB
                 } catch (IllegalAccessException e) {
                     throw new BeansException("无法访问字段: " + field.getName(), e);
                 }
+                continue; // 已处理 @Autowired，跳过 @Value 检查
+            }
+
+            // 检查是否有 @Value 注解
+            Value value = field.getAnnotation(Value.class);
+            if (value != null) {
+                try {
+                    // 获取注解值
+                    String valueStr = value.value();
+
+                    // 解析占位符
+                    if (placeholderConfigurer != null && valueStr != null) {
+                        valueStr = placeholderConfigurer.resolvePlaceholder(valueStr);
+                    }
+
+                    // 类型转换
+                    Object convertedValue = convertValue(valueStr, field.getType());
+
+                    // 设置字段可访问
+                    field.setAccessible(true);
+
+                    // 通过反射设置字段值
+                    field.set(bean, convertedValue);
+
+                } catch (IllegalAccessException e) {
+                    throw new BeansException("无法访问字段: " + field.getName(), e);
+                } catch (Exception e) {
+                    throw new BeansException("无法注入 @Value 字段: " + field.getName(), e);
+                }
             }
         }
+    }
+
+    /**
+     * 简单的类型转换
+     * <p>
+     * 将字符串值转换为目标类型
+     *
+     * @param value      字符串值
+     * @param targetType 目标类型
+     * @return 转换后的值
+     */
+    private Object convertValue(String value, Class<?> targetType) {
+        if (value == null) {
+            return null;
+        }
+
+        // String 类型直接返回
+        if (targetType == String.class) {
+            return value;
+        }
+
+        // 基本类型和包装类型
+        if (targetType == int.class || targetType == Integer.class) {
+            return Integer.parseInt(value);
+        }
+        if (targetType == long.class || targetType == Long.class) {
+            return Long.parseLong(value);
+        }
+        if (targetType == double.class || targetType == Double.class) {
+            return Double.parseDouble(value);
+        }
+        if (targetType == float.class || targetType == Float.class) {
+            return Float.parseFloat(value);
+        }
+        if (targetType == boolean.class || targetType == Boolean.class) {
+            return Boolean.parseBoolean(value);
+        }
+        if (targetType == short.class || targetType == Short.class) {
+            return Short.parseShort(value);
+        }
+        if (targetType == byte.class || targetType == Byte.class) {
+            return Byte.parseByte(value);
+        }
+
+        // 不支持的类型，直接返回字符串
+        return value;
     }
 
     /**
