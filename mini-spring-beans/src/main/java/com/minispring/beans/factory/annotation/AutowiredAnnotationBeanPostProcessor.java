@@ -100,8 +100,22 @@ public class AutowiredAnnotationBeanPostProcessor implements InstantiationAwareB
                 Class<?> fieldType = field.getType();
 
                 try {
-                    // 从容器中按类型获取 Bean
-                    Object dependencyBean = beanFactory.getBean(fieldType);
+                    Object dependencyBean;
+
+                    // 检查是否有 @Qualifier 注解
+                    Qualifier qualifier = field.getAnnotation(Qualifier.class);
+                    if (qualifier != null) {
+                        // 如果有 @Qualifier，按名称和类型查找
+                        String beanName = qualifier.value();
+                        if (beanName == null || beanName.isEmpty()) {
+                            // 如果 @Qualifier 没有指定值，使用字段名作为 Bean 名称
+                            beanName = field.getName();
+                        }
+                        dependencyBean = beanFactory.getBean(beanName, fieldType);
+                    } else {
+                        // 如果没有 @Qualifier，按类型查找
+                        dependencyBean = beanFactory.getBean(fieldType);
+                    }
 
                     // 设置字段可访问（处理 private 字段）
                     field.setAccessible(true);
@@ -224,8 +238,37 @@ public class AutowiredAnnotationBeanPostProcessor implements InstantiationAwareB
                 Class<?> parameterType = parameterTypes[0];
 
                 try {
-                    // 从容器中按类型获取 Bean
-                    Object dependencyBean = beanFactory.getBean(parameterType);
+                    Object dependencyBean;
+
+                    // 检查方法的第一个参数是否有 @Qualifier 注解
+                    Qualifier qualifier = null;
+                    if (method.getParameterAnnotations().length > 0 && method.getParameterAnnotations()[0].length > 0) {
+                        for (java.lang.annotation.Annotation annotation : method.getParameterAnnotations()[0]) {
+                            if (annotation instanceof Qualifier) {
+                                qualifier = (Qualifier) annotation;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (qualifier != null) {
+                        // 如果有 @Qualifier，按名称和类型查找
+                        String beanName = qualifier.value();
+                        if (beanName == null || beanName.isEmpty()) {
+                            // 如果 @Qualifier 没有指定值，从方法名推导 Bean 名称
+                            // 例如 setUserService -> userService
+                            String methodName = method.getName();
+                            if (methodName.startsWith("set") && methodName.length() > 3) {
+                                beanName = Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);
+                            } else {
+                                throw new BeansException("无法从方法名推导 Bean 名称: " + methodName);
+                            }
+                        }
+                        dependencyBean = beanFactory.getBean(beanName, parameterType);
+                    } else {
+                        // 如果没有 @Qualifier，按类型查找
+                        dependencyBean = beanFactory.getBean(parameterType);
+                    }
 
                     // 设置方法可访问
                     method.setAccessible(true);
