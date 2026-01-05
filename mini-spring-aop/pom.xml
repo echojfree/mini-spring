@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.minispring</groupId>
+        <artifactId>mini-spring</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>mini-spring-aop</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Mini Spring AOP</name>
+    <description>AOP support for Mini Spring Framework</description>
+
+    <dependencies>
+        <!-- Mini Spring Core -->
+        <dependency>
+            <groupId>com.minispring</groupId>
+            <artifactId>mini-spring-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Mini Spring Beans -->
+        <dependency>
+            <groupId>com.minispring</groupId>
+            <artifactId>mini-spring-beans</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- AOP Alliance API (standard AOP interfaces) -->
+        <dependency>
+            <groupId>aopalliance</groupId>
+            <artifactId>aopalliance</artifactId>
+            <version>1.0</version>
+        </dependency>
+
+        <!-- AspectJ Weaver (for pointcut expression parsing) -->
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
+            <version>1.9.7</version>
+        </dependency>
+
+        <!-- CGLIB (already in beans, but explicit here for clarity) -->
+        <dependency>
+            <groupId>cglib</groupId>
+            <artifactId>cglib</artifactId>
+        </dependency>
+
+        <!-- Test Dependencies -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

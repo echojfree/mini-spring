@@ -19,6 +19,7 @@
         <module>mini-spring-core</module>
         <module>mini-spring-beans</module>
         <module>mini-spring-context</module>
+        <module>mini-spring-aop</module>
     </modules>
 
     <!-- 属性配置 -->
