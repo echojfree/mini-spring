@@ -33,6 +33,18 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- CGLIB：测试需要 -->
+        <dependency>
+            <groupId>cglib</groupId>
+            <artifactId>cglib</artifactId>
+        </dependency>
+
+        <!-- Hutool：测试需要 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+        </dependency>
+
         <!-- JUnit 测试 -->
         <dependency>
             <groupId>junit</groupId>

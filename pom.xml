@@ -35,6 +35,7 @@
         <!-- 依赖版本统一管理 -->
         <junit.version>4.13.2</junit.version>
         <cglib.version>3.3.0</cglib.version>
+        <hutool.version>5.8.11</hutool.version>
         <slf4j.version>1.7.36</slf4j.version>
         <logback.version>1.2.11</logback.version>
     </properties>
@@ -55,6 +56,13 @@
                 <groupId>cglib</groupId>
                 <artifactId>cglib</artifactId>
                 <version>${cglib.version}</version>
+            </dependency>
+
+            <!-- Hutool：Java 工具类库 -->
+            <dependency>
+                <groupId>cn.hutool</groupId>
+                <artifactId>hutool-all</artifactId>
+                <version>${hutool.version}</version>
             </dependency>
 
             <!-- SLF4J：日志门面 -->

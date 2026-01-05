@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans>
+
+    <!-- Lifecycle Bean -->
+    <bean id="lifecycleBean" class="com.minispring.context.support.XmlConfigTest$LifecycleBean">
+        <property name="message" value="Hello from XML"/>
+    </bean>
+
+    <!-- Custom BeanPostProcessor -->
+    <bean id="customProcessor" class="com.minispring.context.support.XmlConfigTest$CustomBeanPostProcessor"/>
+
+</beans>

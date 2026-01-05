@@ -34,6 +34,12 @@
             <artifactId>cglib</artifactId>
         </dependency>
 
+        <!-- Hutool：用于 XML 解析等工具方法 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+        </dependency>
+
         <!-- 日志依赖 -->
         <dependency>
             <groupId>org.slf4j</groupId>

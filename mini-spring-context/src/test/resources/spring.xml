@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans>
+
+    <!-- UserService Bean -->
+    <bean id="userService" class="com.minispring.context.support.XmlConfigTest$UserService">
+        <property name="serviceName" value="UserService"/>
+        <property name="userDao" ref="userDao"/>
+    </bean>
+
+    <!-- UserDao Bean -->
+    <bean id="userDao" class="com.minispring.context.support.XmlConfigTest$UserDao">
+        <property name="daoName" value="UserDao"/>
+    </bean>
+
+</beans>
