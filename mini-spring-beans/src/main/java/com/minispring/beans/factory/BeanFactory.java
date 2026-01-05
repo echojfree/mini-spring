@@ -54,4 +54,17 @@ public interface BeanFactory {
      */
     <T> T getBean(String name, Class<T> requiredType) throws BeansException;
 
+    /**
+     * 根据类型获取 Bean 实例
+     * <p>
+     * 按类型查找 Bean，如果有多个相同类型的 Bean 会抛出异常
+     * 这是 @Autowired 按类型注入的基础
+     *
+     * @param requiredType 要求的类型
+     * @param <T>          泛型类型
+     * @return 指定类型的 Bean 实例
+     * @throws BeansException 如果找不到 Bean、有多个候选 Bean 或创建失败
+     */
+    <T> T getBean(Class<T> requiredType) throws BeansException;
+
 }

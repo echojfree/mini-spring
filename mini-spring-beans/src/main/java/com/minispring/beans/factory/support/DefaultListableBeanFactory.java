@@ -13,6 +13,7 @@ import com.minispring.beans.factory.ObjectFactory;
 import com.minispring.beans.factory.config.BeanDefinition;
 import com.minispring.beans.factory.config.BeanPostProcessor;
 import com.minispring.beans.factory.config.BeanReference;
+import com.minispring.beans.factory.config.InstantiationAwareBeanPostProcessor;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -441,6 +442,56 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
         return (T) bean;
     }
 
+    /**
+     * 根据类型获取 Bean 实例
+     * <p>
+     * 按类型查找 Bean，如果有多个相同类型的 Bean 会抛出异常
+     * 这是 @Autowired 按类型注入的基础
+     * <p>
+     * 面试考点：
+     * 1. @Autowired 是如何按类型注入的？
+     *    - 遍历所有 BeanDefinition，找到类型匹配的 Bean
+     *    - 如果找到多个，需要 @Qualifier 指定
+     * 2. 为什么 @Autowired 默认按类型注入？
+     *    - 更符合面向对象编程（依赖接口而非名称）
+     *    - 重构友好（修改 Bean 名称不影响注入）
+     *
+     * @param requiredType 要求的类型
+     * @param <T>          泛型类型
+     * @return 指定类型的 Bean 实例
+     * @throws BeansException 如果找不到 Bean、有多个候选 Bean 或创建失败
+     */
+    @Override
+    public <T> T getBean(Class<T> requiredType) throws BeansException {
+        // 遍历所有 BeanDefinition，找到类型匹配的
+        String foundBeanName = null;
+        for (Map.Entry<String, BeanDefinition> entry : beanDefinitionMap.entrySet()) {
+            BeanDefinition beanDefinition = entry.getValue();
+            Class<?> beanClass = beanDefinition.getBeanClass();
+
+            // 检查类型是否匹配（包括子类和接口实现）
+            if (requiredType.isAssignableFrom(beanClass)) {
+                if (foundBeanName != null) {
+                    // 找到多个候选 Bean
+                    throw new BeansException(
+                            "找到多个类型为 " + requiredType.getName() + " 的 Bean: " +
+                                    foundBeanName + ", " + entry.getKey() +
+                                    "。请使用 @Qualifier 指定 Bean 名称"
+                    );
+                }
+                foundBeanName = entry.getKey();
+            }
+        }
+
+        // 如果找不到匹配的 Bean
+        if (foundBeanName == null) {
+            throw new BeansException("找不到类型为 " + requiredType.getName() + " 的 Bean");
+        }
+
+        // 获取 Bean 实例
+        return getBean(foundBeanName, requiredType);
+    }
+
     // ==================== Bean 创建方法 ====================
 
     /**
@@ -542,6 +593,7 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * 属性注入：为 Bean 填充属性值
      * <p>
      * 核心流程（面试重点）：
+     * 0. 调用 InstantiationAwareBeanPostProcessor.postProcessPropertyValues（v0.15.0 新增）
      * 1. 获取 BeanDefinition 中的所有属性值
      * 2. 遍历每个属性值：
      *    - 如果是 BeanReference，通过 getBean 获取引用的 Bean
@@ -552,7 +604,7 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * 1. 依赖注入的实现原理
      * 2. 如何区分 Bean 引用和普通值
      * 3. 反射设置属性的过程
-     * 4. 循环依赖问题（当前版本会出现，后续解决）
+     * 4. @Autowired 注解是如何工作的（通过 InstantiationAwareBeanPostProcessor）
      *
      * @param beanName       Bean 名称
      * @param bean           Bean 实例
@@ -560,8 +612,25 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      */
     protected void applyPropertyValues(String beanName, Object bean, BeanDefinition beanDefinition) {
         try {
-            // 获取属性值集合
+            // v0.15.0 新增：调用 InstantiationAwareBeanPostProcessor.postProcessPropertyValues
+            // 用于处理 @Autowired 注解
             PropertyValues propertyValues = beanDefinition.getPropertyValues();
+
+            // 如果为 null，创建空的 PropertyValues
+            if (propertyValues == null) {
+                propertyValues = new PropertyValues();
+            }
+
+            // 调用 InstantiationAwareBeanPostProcessor
+            for (BeanPostProcessor beanPostProcessor : beanPostProcessors) {
+                if (beanPostProcessor instanceof InstantiationAwareBeanPostProcessor) {
+                    InstantiationAwareBeanPostProcessor processor =
+                            (InstantiationAwareBeanPostProcessor) beanPostProcessor;
+                    propertyValues = processor.postProcessPropertyValues(propertyValues, bean, beanName);
+                }
+            }
+
+            // 获取属性值集合
             if (propertyValues == null || propertyValues.isEmpty()) {
                 // 没有属性需要注入
                 return;
@@ -626,6 +695,12 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
     public void addBeanPostProcessor(BeanPostProcessor beanPostProcessor) {
         // 移除已存在的相同实例（避免重复注册）
         this.beanPostProcessors.remove(beanPostProcessor);
+
+        // 如果实现了 BeanFactoryAware，注入 BeanFactory
+        if (beanPostProcessor instanceof BeanFactoryAware) {
+            ((BeanFactoryAware) beanPostProcessor).setBeanFactory(this);
+        }
+
         // 添加到列表
         this.beanPostProcessors.add(beanPostProcessor);
     }

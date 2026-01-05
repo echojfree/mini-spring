@@ -1,5 +1,6 @@
 package com.minispring.context.annotation;
 
+import com.minispring.beans.factory.config.BeanPostProcessor;
 import com.minispring.beans.factory.support.DefaultListableBeanFactory;
 import com.minispring.context.support.AbstractRefreshableApplicationContext;
 
@@ -140,6 +141,18 @@ public class AnnotationConfigApplicationContext extends AbstractRefreshableAppli
     }
 
     /**
+     * 添加 BeanPostProcessor
+     * <p>
+     * 提供公开方法添加 BeanPostProcessor
+     * 用于测试场景注册 AutowiredAnnotationBeanPostProcessor
+     *
+     * @param beanPostProcessor BeanPostProcessor 实例
+     */
+    public void addBeanPostProcessor(BeanPostProcessor beanPostProcessor) {
+        getBeanFactory().addBeanPostProcessor(beanPostProcessor);
+    }
+
+    /**
      * 加载 BeanDefinition
      * <p>
      * 通过包扫描加载 BeanDefinition
@@ -148,6 +161,8 @@ public class AnnotationConfigApplicationContext extends AbstractRefreshableAppli
      * 1. 创建 ClassPathBeanDefinitionScanner
      * 2. 调用 scan() 方法扫描指定包
      * 3. 自动注册所有带 @Component 注解的类
+     * <p>
+     * v0.15.0 新增：自动注册 AutowiredAnnotationBeanPostProcessor
      * <p>
      * 面试考点：
      * 1. 包扫描的工作原理
@@ -163,6 +178,10 @@ public class AnnotationConfigApplicationContext extends AbstractRefreshableAppli
      */
     @Override
     protected void loadBeanDefinitions(DefaultListableBeanFactory beanFactory) throws Exception {
+        // v0.15.0 新增：自动注册 AutowiredAnnotationBeanPostProcessor
+        // 用于处理 @Autowired 注解
+        beanFactory.addBeanPostProcessor(new com.minispring.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor());
+
         // 创建包扫描器
         ClassPathBeanDefinitionScanner scanner = new ClassPathBeanDefinitionScanner(beanFactory);
 

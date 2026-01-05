@@ -277,6 +277,22 @@ public abstract class AbstractApplicationContext implements ConfigurableApplicat
         return getBeanFactory().getBean(name, requiredType);
     }
 
+    /**
+     * 根据类型获取 Bean 实例
+     * <p>
+     * 委托给内部的 BeanFactory 处理
+     * 按类型查找 Bean，如果有多个相同类型的 Bean 会抛出异常
+     *
+     * @param requiredType 要求的类型
+     * @param <T>          泛型类型
+     * @return 指定类型的 Bean 实例
+     * @throws BeansException 如果找不到 Bean、有多个候选 Bean 或创建失败
+     */
+    @Override
+    public <T> T getBean(Class<T> requiredType) throws BeansException {
+        return getBeanFactory().getBean(requiredType);
+    }
+
     // ==================== 容器生命周期管理 ====================
 
     /**
