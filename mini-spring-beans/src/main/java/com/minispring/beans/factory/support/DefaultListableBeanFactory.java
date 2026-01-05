@@ -606,4 +606,37 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
         }
     }
 
+    /**
+     * 预实例化所有单例 Bean
+     * <p>
+     * ApplicationContext 的特性：容器启动时就创建所有单例 Bean
+     * BeanFactory 是延迟加载，getBean 时才创建
+     * <p>
+     * 面试考点：
+     * 1. ApplicationContext 和 BeanFactory 的区别
+     *    - ApplicationContext：预加载，容器启动时创建
+     *    - BeanFactory：延迟加载，使用时创建
+     * 2. 预加载的优点
+     *    - 提前发现配置错误
+     *    - 提高运行时性能（不需要第一次调用时创建）
+     * 3. 预加载的缺点
+     *    - 启动时间较长
+     *    - 占用更多内存
+     */
+    public void preInstantiateSingletons() {
+        // 获取所有 BeanDefinition 的名称
+        String[] beanNames = getBeanDefinitionNames();
+
+        // 遍历实例化所有单例 Bean
+        for (String beanName : beanNames) {
+            BeanDefinition beanDefinition = getBeanDefinition(beanName);
+
+            // 只实例化单例 Bean
+            if (beanDefinition != null && beanDefinition.isSingleton()) {
+                // 调用 getBean 触发 Bean 的创建
+                getBean(beanName);
+            }
+        }
+    }
+
 }
