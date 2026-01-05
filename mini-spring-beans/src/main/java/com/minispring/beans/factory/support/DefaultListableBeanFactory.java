@@ -53,6 +53,20 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      */
     private final Map<String, Object> singletonObjects = new HashMap<>();
 
+    /**
+     * Bean 实例化策略
+     * 默认使用 CGLIB 实例化策略
+     * <p>
+     * 面试考点：
+     * 1. 为什么使用策略模式？
+     *    - 支持多种实例化方式（JDK 反射、CGLIB）
+     *    - 便于扩展和替换
+     * 2. Spring 默认使用哪种实例化方式？
+     *    - Spring 5.x 之前：CGLIB
+     *    - Spring 5.x 之后：优先 CGLIB，某些场景用反射
+     */
+    private InstantiationStrategy instantiationStrategy = new CglibSubclassingInstantiationStrategy();
+
     // ==================== BeanDefinitionRegistry 接口实现 ====================
 
     /**
@@ -185,7 +199,7 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
     /**
      * 创建 Bean 实例
      * <p>
-     * 当前版本：使用简单的反射创建实例
+     * 使用实例化策略创建 Bean 实例
      * 后续会增强：
      * 1. 支持构造器注入
      * 2. 支持属性注入
@@ -199,27 +213,21 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * @throws BeansException 创建失败
      */
     protected Object createBean(String beanName, BeanDefinition beanDefinition) throws BeansException {
-        try {
-            // 获取 Bean 的 Class 对象
-            Class<?> beanClass = beanDefinition.getBeanClass();
+        // 使用实例化策略创建 Bean 实例
+        // 面试考点：策略模式的应用
+        return instantiationStrategy.instantiate(beanDefinition);
+    }
 
-            // 使用默认构造器创建实例
-            // 面试考点：newInstance() 方法的原理
-            Object bean = beanClass.newInstance();
-
-            return bean;
-
-        } catch (InstantiationException e) {
-            throw new BeansException(
-                    "实例化 Bean 失败: " + beanName +
-                            "，请确保该类有无参构造函数且不是抽象类", e);
-        } catch (IllegalAccessException e) {
-            throw new BeansException(
-                    "实例化 Bean 失败: " + beanName +
-                            "，请确保构造函数是 public 的", e);
-        } catch (Exception e) {
-            throw new BeansException("创建 Bean 失败: " + beanName, e);
-        }
+    /**
+     * 设置实例化策略
+     * <p>
+     * 允许外部更换实例化策略
+     * 例如：从 CGLIB 切换到简单反射
+     *
+     * @param instantiationStrategy 实例化策略
+     */
+    public void setInstantiationStrategy(InstantiationStrategy instantiationStrategy) {
+        this.instantiationStrategy = instantiationStrategy;
     }
 
 }
