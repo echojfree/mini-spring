@@ -10,10 +10,13 @@ import com.minispring.beans.factory.BeanNameAware;
 import com.minispring.beans.factory.DisposableBean;
 import com.minispring.beans.factory.InitializingBean;
 import com.minispring.beans.factory.config.BeanDefinition;
+import com.minispring.beans.factory.config.BeanPostProcessor;
 import com.minispring.beans.factory.config.BeanReference;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -75,6 +78,21 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      *    - 原型 Bean 的生命周期由使用者管理
      */
     private final Map<String, DisposableBean> disposableBeans = new HashMap<>();
+
+    /**
+     * BeanPostProcessor 列表
+     * 按照注册顺序存储所有的 BeanPostProcessor
+     * <p>
+     * 面试考点：
+     * 1. BeanPostProcessor 的执行顺序
+     *    - 按照注册顺序执行
+     *    - 可以通过 Ordered 接口指定优先级（后续实现）
+     * 2. BeanPostProcessor 的应用场景
+     *    - AOP 代理创建
+     *    - 自动注入（@Autowired）
+     *    - 自定义注解处理
+     */
+    private final List<BeanPostProcessor> beanPostProcessors = new ArrayList<>();
 
     /**
      * Bean 实例化策略
@@ -321,6 +339,40 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
         this.instantiationStrategy = instantiationStrategy;
     }
 
+    // ==================== BeanPostProcessor 管理 ====================
+
+    /**
+     * 添加 BeanPostProcessor
+     * <p>
+     * 注册 BeanPostProcessor 到容器
+     * BeanPostProcessor 会在 Bean 初始化前后被调用
+     * <p>
+     * 面试考点：
+     * 1. BeanPostProcessor 的注册时机
+     *    - 应该在任何 Bean 创建之前注册
+     *    - 通常在容器启动时注册
+     * 2. BeanPostProcessor 本身也是 Bean 吗？
+     *    - 可以是普通 Bean，也可以手动注册
+     *    - Spring 会自动发现并注册实现了 BeanPostProcessor 的 Bean
+     *
+     * @param beanPostProcessor BeanPostProcessor 实例
+     */
+    public void addBeanPostProcessor(BeanPostProcessor beanPostProcessor) {
+        // 移除已存在的相同实例（避免重复注册）
+        this.beanPostProcessors.remove(beanPostProcessor);
+        // 添加到列表
+        this.beanPostProcessors.add(beanPostProcessor);
+    }
+
+    /**
+     * 获取所有 BeanPostProcessor
+     *
+     * @return BeanPostProcessor 列表
+     */
+    public List<BeanPostProcessor> getBeanPostProcessors() {
+        return this.beanPostProcessors;
+    }
+
     // ==================== Bean 初始化方法 ====================
 
     /**
@@ -328,11 +380,11 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * <p>
      * Bean 初始化流程（面试重点）：
      * 1. 调用 Aware 接口方法
-     * 2. 调用 BeanPostProcessor 的前置处理方法（后续实现）
+     * 2. 调用 BeanPostProcessor 的前置处理方法
      * 3. 调用初始化方法：
      *    - 先调用 InitializingBean 接口的 afterPropertiesSet 方法
      *    - 再调用自定义的 init-method
-     * 4. 调用 BeanPostProcessor 的后置处理方法（后续实现）
+     * 4. 调用 BeanPostProcessor 的后置处理方法
      * <p>
      * 面试考点：
      * 1. 初始化方法的执行顺序
@@ -348,27 +400,46 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
         // 步骤1：调用 Aware 接口方法
         invokeAwareMethods(beanName, bean);
 
-        // 步骤2：调用 InitializingBean 接口方法
-        if (bean instanceof InitializingBean) {
-            try {
-                ((InitializingBean) bean).afterPropertiesSet();
-            } catch (Exception e) {
-                throw new BeansException("InitializingBean.afterPropertiesSet() 调用失败: " + beanName, e);
-            }
+        // 步骤2：调用 BeanPostProcessor 的前置处理方法
+        Object wrappedBean = applyBeanPostProcessorsBeforeInitialization(bean, beanName);
+
+        // 步骤3：调用初始化方法
+        try {
+            invokeInitMethods(beanName, wrappedBean, beanDefinition);
+        } catch (Exception e) {
+            throw new BeansException("初始化方法调用失败: " + beanName, e);
         }
 
-        // 步骤3：调用自定义 init-method
+        // 步骤4：调用 BeanPostProcessor 的后置处理方法
+        wrappedBean = applyBeanPostProcessorsAfterInitialization(wrappedBean, beanName);
+
+        return wrappedBean;
+    }
+
+    /**
+     * 调用初始化方法
+     * <p>
+     * 调用顺序：
+     * 1. InitializingBean.afterPropertiesSet()
+     * 2. init-method
+     *
+     * @param beanName       Bean 名称
+     * @param bean           Bean 实例
+     * @param beanDefinition Bean 定义
+     * @throws Exception 初始化失败
+     */
+    private void invokeInitMethods(String beanName, Object bean, BeanDefinition beanDefinition) throws Exception {
+        // 1. 调用 InitializingBean 接口方法
+        if (bean instanceof InitializingBean) {
+            ((InitializingBean) bean).afterPropertiesSet();
+        }
+
+        // 2. 调用自定义 init-method
         String initMethodName = beanDefinition.getInitMethodName();
         if (initMethodName != null && !initMethodName.isEmpty()) {
-            try {
-                Method initMethod = beanDefinition.getBeanClass().getMethod(initMethodName);
-                initMethod.invoke(bean);
-            } catch (Exception e) {
-                throw new BeansException("init-method 调用失败: " + beanName + "." + initMethodName, e);
-            }
+            Method initMethod = beanDefinition.getBeanClass().getMethod(initMethodName);
+            initMethod.invoke(bean);
         }
-
-        return bean;
     }
 
     /**
@@ -406,6 +477,69 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
 
             // 3. ApplicationContextAware 将在 ApplicationContext 中实现
         }
+    }
+
+    /**
+     * 应用 BeanPostProcessor 的前置处理方法
+     * <p>
+     * 遍历所有 BeanPostProcessor，依次调用其 postProcessBeforeInitialization 方法
+     * <p>
+     * 面试考点：
+     * 1. 责任链模式的应用
+     *    - 多个 BeanPostProcessor 按顺序处理
+     *    - 每个处理器都可以修改 Bean 或返回包装对象
+     * 2. 短路处理
+     *    - 如果某个处理器返回 null，则直接返回 null
+     *    - 后续处理器不会被调用
+     *
+     * @param existingBean 已存在的 Bean 实例
+     * @param beanName     Bean 名称
+     * @return 处理后的 Bean 实例
+     */
+    public Object applyBeanPostProcessorsBeforeInitialization(Object existingBean, String beanName) {
+        Object result = existingBean;
+        for (BeanPostProcessor processor : getBeanPostProcessors()) {
+            Object current = processor.postProcessBeforeInitialization(result, beanName);
+            if (current == null) {
+                // 短路返回
+                return result;
+            }
+            result = current;
+        }
+        return result;
+    }
+
+    /**
+     * 应用 BeanPostProcessor 的后置处理方法
+     * <p>
+     * 遍历所有 BeanPostProcessor，依次调用其 postProcessAfterInitialization 方法
+     * <p>
+     * 面试考点：
+     * 1. AOP 代理创建的时机
+     *    - 通常在 postProcessAfterInitialization 中创建代理
+     *    - 此时 Bean 已经完全初始化，可以安全创建代理
+     * 2. 代理对象替换原始对象
+     *    - 返回的代理对象会替换原始 Bean
+     *    - 容器中存储的是代理对象
+     * 3. 多个代理的嵌套
+     *    - 多个 BeanPostProcessor 可以创建多层代理
+     *    - 代理1 包装 代理2 包装 原始Bean
+     *
+     * @param existingBean 已存在的 Bean 实例
+     * @param beanName     Bean 名称
+     * @return 处理后的 Bean 实例（可能是代理对象）
+     */
+    public Object applyBeanPostProcessorsAfterInitialization(Object existingBean, String beanName) {
+        Object result = existingBean;
+        for (BeanPostProcessor processor : getBeanPostProcessors()) {
+            Object current = processor.postProcessAfterInitialization(result, beanName);
+            if (current == null) {
+                // 短路返回
+                return result;
+            }
+            result = current;
+        }
+        return result;
     }
 
     /**
