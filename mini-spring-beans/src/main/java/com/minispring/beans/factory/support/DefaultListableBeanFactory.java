@@ -9,6 +9,7 @@ import com.minispring.beans.factory.BeanFactoryAware;
 import com.minispring.beans.factory.BeanNameAware;
 import com.minispring.beans.factory.DisposableBean;
 import com.minispring.beans.factory.InitializingBean;
+import com.minispring.beans.factory.ObjectFactory;
 import com.minispring.beans.factory.config.BeanDefinition;
 import com.minispring.beans.factory.config.BeanPostProcessor;
 import com.minispring.beans.factory.config.BeanReference;
@@ -54,16 +55,68 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
     private final Map<String, BeanDefinition> beanDefinitionMap = new HashMap<>();
 
     /**
-     * 单例 Bean 缓存池（一级缓存）
+     * 一级缓存：单例 Bean 缓存池（成品对象）
      * key: Bean 名称
-     * value: Bean 实例（成品对象）
+     * value: Bean 实例（完全初始化的 Bean）
      * <p>
      * 面试考点：
      * 1. 这是 Spring 三级缓存中的一级缓存
      * 2. 存储完全初始化好的单例 Bean
      * 3. 为什么需要缓存？避免重复创建，提高性能
+     * 4. 线程安全：虽然使用 HashMap，但通过 synchronized 保证安全
      */
     private final Map<String, Object> singletonObjects = new HashMap<>();
+
+    /**
+     * 二级缓存：早期单例对象缓存（半成品对象）
+     * key: Bean 名称
+     * value: 早期 Bean 实例（实例化完成，但未初始化）
+     * <p>
+     * 面试考点：
+     * 1. 存储提前暴露的半成品对象
+     * 2. 用于解决循环依赖问题
+     * 3. 对象已实例化但未完成属性注入和初始化
+     * 4. 为什么需要二级缓存？
+     *    - 提高性能：避免重复调用三级缓存的工厂方法
+     *    - 保证对象唯一性：多次获取返回同一个半成品对象
+     */
+    private final Map<String, Object> earlySingletonObjects = new HashMap<>();
+
+    /**
+     * 三级缓存：单例对象工厂缓存
+     * key: Bean 名称
+     * value: ObjectFactory 对象工厂
+     * <p>
+     * 面试考点：
+     * 1. 存储对象工厂，而不是对象本身
+     * 2. 在需要时才调用工厂创建半成品对象
+     * 3. 为什么需要三级缓存？
+     *    - 支持 AOP 代理对象的循环依赖
+     *    - 延迟代理对象的创建时机
+     *    - 如果只有二级缓存，无法处理 AOP 场景
+     * 4. ObjectFactory 的作用？
+     *    - 封装对象创建逻辑（可能是原始对象，也可能是代理对象）
+     *    - 提供扩展点，允许在创建对象时进行增强
+     */
+    private final Map<String, ObjectFactory<?>> singletonFactories = new HashMap<>();
+
+    /**
+     * 正在创建的 Bean 名称集合
+     * 用于检测循环依赖
+     * <p>
+     * 面试考点：
+     * 1. 如何检测循环依赖？
+     *    - Bean 创建前加入此集合
+     *    - Bean 创建完成后从此集合移除
+     *    - 如果创建过程中再次请求同一个 Bean，说明存在循环依赖
+     * 2. 为什么使用 ThreadLocal？
+     *    - 避免多线程并发创建 Bean 时的干扰
+     *    - 每个线程维护自己的"正在创建"集合
+     * 3. 构造器循环依赖为什么无法解决？
+     *    - 构造器注入时对象还未实例化，无法提前暴露
+     *    - 三级缓存依赖于对象已经实例化
+     */
+    private final ThreadLocal<List<String>> singletonsCurrentlyInCreation = ThreadLocal.withInitial(ArrayList::new);
 
     /**
      * 销毁 Bean 的适配器集合
@@ -167,15 +220,159 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
     // ==================== BeanFactory 接口实现 ====================
 
     /**
+     * 从三级缓存获取单例 Bean
+     * <p>
+     * 这是 Spring 三级缓存的核心实现（面试重点）
+     * <p>
+     * 查找顺序：
+     * 1. 一级缓存 singletonObjects：成品对象
+     * 2. 二级缓存 earlySingletonObjects：半成品对象
+     * 3. 三级缓存 singletonFactories：对象工厂
+     * <p>
+     * 面试考点：
+     * 1. 为什么按这个顺序查找？
+     *    - 优先返回完全初始化的对象（一级缓存）
+     *    - 其次返回半成品对象（二级缓存）
+     *    - 最后调用工厂创建半成品对象（三级缓存）
+     * 2. 什么时候会查到三级缓存？
+     *    - 循环依赖场景：A 依赖 B，B 依赖 A
+     *    - A 创建过程中需要 B，B 创建过程中又需要 A
+     *    - 此时 A 在三级缓存中，需要提前暴露
+     * 3. 为什么要移动到二级缓存？
+     *    - 提高性能：避免重复调用工厂方法
+     *    - 保证唯一性：多次获取返回同一个对象
+     *
+     * @param beanName        Bean 名称
+     * @param allowEarlyReference 是否允许提前引用
+     * @return Bean 实例，可能是成品对象或半成品对象
+     */
+    protected Object getSingleton(String beanName, boolean allowEarlyReference) {
+        // 步骤1：从一级缓存获取成品对象
+        Object singletonObject = singletonObjects.get(beanName);
+        if (singletonObject != null) {
+            return singletonObject;
+        }
+
+        // 步骤2：从二级缓存获取半成品对象
+        singletonObject = earlySingletonObjects.get(beanName);
+        if (singletonObject != null) {
+            return singletonObject;
+        }
+
+        // 步骤3：从三级缓存获取对象工厂
+        if (allowEarlyReference) {
+            ObjectFactory<?> singletonFactory = singletonFactories.get(beanName);
+            if (singletonFactory != null) {
+                try {
+                    // 调用工厂方法创建半成品对象
+                    singletonObject = singletonFactory.getObject();
+
+                    // 移动到二级缓存
+                    earlySingletonObjects.put(beanName, singletonObject);
+
+                    // 从三级缓存移除
+                    singletonFactories.remove(beanName);
+                } catch (Exception e) {
+                    throw new BeansException("创建早期 Bean 引用失败: " + beanName, e);
+                }
+            }
+        }
+
+        return singletonObject;
+    }
+
+    /**
+     * 添加单例对象工厂到三级缓存
+     * <p>
+     * 提前暴露对象工厂，用于解决循环依赖
+     * <p>
+     * 面试考点：
+     * 1. 什么时候调用此方法？
+     *    - Bean 实例化之后，属性注入之前
+     *    - 仅对单例 Bean 进行提前暴露
+     * 2. 为什么要提前暴露工厂而不是对象？
+     *    - 支持 AOP 代理对象的循环依赖
+     *    - 延迟代理对象的创建时机
+     * 3. ObjectFactory 如何创建对象？
+     *    - 正常情况：返回原始对象
+     *    - AOP 场景：返回代理对象（通过 BeanPostProcessor）
+     *
+     * @param beanName Bean 名称
+     * @param singletonFactory 对象工厂
+     */
+    protected void addSingletonFactory(String beanName, ObjectFactory<?> singletonFactory) {
+        synchronized (singletonObjects) {
+            // 只有在一级缓存不存在时才添加
+            if (!singletonObjects.containsKey(beanName)) {
+                singletonFactories.put(beanName, singletonFactory);
+                // 从二级缓存移除（保证只存在于一个缓存中）
+                earlySingletonObjects.remove(beanName);
+            }
+        }
+    }
+
+    /**
+     * 添加单例 Bean 到一级缓存
+     * <p>
+     * Bean 完全初始化后，放入一级缓存
+     *
+     * @param beanName Bean 名称
+     * @param singletonObject 单例对象
+     */
+    protected void addSingleton(String beanName, Object singletonObject) {
+        synchronized (singletonObjects) {
+            singletonObjects.put(beanName, singletonObject);
+            // 从二级和三级缓存移除
+            earlySingletonObjects.remove(beanName);
+            singletonFactories.remove(beanName);
+        }
+    }
+
+    /**
+     * Bean 是否正在创建中
+     *
+     * @param beanName Bean 名称
+     * @return true 表示正在创建
+     */
+    protected boolean isSingletonCurrentlyInCreation(String beanName) {
+        return singletonsCurrentlyInCreation.get().contains(beanName);
+    }
+
+    /**
+     * 标记 Bean 开始创建
+     *
+     * @param beanName Bean 名称
+     */
+    protected void beforeSingletonCreation(String beanName) {
+        if (!singletonsCurrentlyInCreation.get().add(beanName)) {
+            throw new BeansException("检测到循环依赖: " + beanName + " 正在创建中");
+        }
+    }
+
+    /**
+     * 标记 Bean 创建完成
+     *
+     * @param beanName Bean 名称
+     */
+    protected void afterSingletonCreation(String beanName) {
+        if (!singletonsCurrentlyInCreation.get().remove(beanName)) {
+            throw new BeansException("Bean 创建状态异常: " + beanName);
+        }
+    }
+
+    /**
      * 获取 Bean 实例
      * <p>
      * 完整流程（面试重点）：
      * 1. 查找 BeanDefinition，不存在则抛出异常
      * 2. 如果是单例 Bean：
-     *    - 先从缓存池查找，存在则直接返回
-     *    - 不存在则创建新实例，并放入缓存池
+     *    - 先从三级缓存查找（一级→二级→三级）
+     *    - 不存在则创建新实例，支持循环依赖
      * 3. 如果是原型 Bean：
      *    - 每次都创建新实例，不缓存
+     *    - 不支持循环依赖（无法提前暴露）
+     * <p>
+     * v0.12.0 更新：支持三级缓存和循环依赖解决
      *
      * @param name Bean 名称
      * @return Bean 实例
@@ -191,20 +388,29 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
 
         // 步骤2：处理单例 Bean
         if (beanDefinition.isSingleton()) {
-            // 从单例缓存池获取
-            Object singletonBean = singletonObjects.get(name);
+            // 从三级缓存获取（支持循环依赖）
+            Object singletonBean = getSingleton(name, true);
             if (singletonBean != null) {
                 // 缓存命中，直接返回
                 return singletonBean;
             }
 
             // 缓存未命中，创建新实例
-            singletonBean = createBean(name, beanDefinition);
+            try {
+                // 标记 Bean 开始创建
+                beforeSingletonCreation(name);
 
-            // 放入单例缓存池
-            singletonObjects.put(name, singletonBean);
+                // 创建 Bean 实例（支持提前暴露）
+                singletonBean = createBean(name, beanDefinition);
 
-            return singletonBean;
+                // 放入一级缓存
+                addSingleton(name, singletonBean);
+
+                return singletonBean;
+            } finally {
+                // 标记 Bean 创建完成
+                afterSingletonCreation(name);
+            }
         }
 
         // 步骤3：处理原型 Bean（每次创建新实例）
@@ -242,14 +448,22 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * <p>
      * 完整的 Bean 创建流程（面试重点）：
      * 1. 实例化：创建 Bean 实例
-     * 2. 属性注入：填充 Bean 的属性值
-     * 3. 初始化：调用初始化方法
-     * 4. 注册销毁方法：如果是单例 Bean
+     * 2. 提前暴露：将对象工厂放入三级缓存（解决循环依赖）
+     * 3. 属性注入：填充 Bean 的属性值
+     * 4. 初始化：调用初始化方法
+     * 5. 注册销毁方法：如果是单例 Bean
+     * <p>
+     * v0.12.0 更新：支持提前暴露和循环依赖解决
      * <p>
      * 面试考点：
      * 1. Bean 的完整生命周期
      * 2. 实例化和初始化的区别
-     * 3. 属性注入的时机
+     * 3. 为什么在属性注入前提前暴露？
+     *    - 支持循环依赖解决
+     *    - 允许其他 Bean 获取半成品对象
+     * 4. 提前暴露的是什么？
+     *    - ObjectFactory 对象工厂
+     *    - 不是 Bean 实例本身
      *
      * @param beanName       Bean 名称
      * @param beanDefinition Bean 定义
@@ -260,16 +474,68 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
         // 步骤1：实例化 Bean
         Object bean = instantiationStrategy.instantiate(beanDefinition);
 
-        // 步骤2：属性注入
+        // 步骤2：提前暴露 Bean（仅对单例 Bean）
+        // 面试考点：为什么要提前暴露？解决循环依赖
+        if (beanDefinition.isSingleton()) {
+            // 创建对象工厂，延迟获取 Bean 引用
+            // 使用匿名内部类实现 ObjectFactory 接口
+            final Object finalBean = bean; // Lambda 需要 final 变量
+            addSingletonFactory(beanName, new ObjectFactory<Object>() {
+                @Override
+                public Object getObject() throws Exception {
+                    return getEarlyBeanReference(beanName, beanDefinition, finalBean);
+                }
+            });
+        }
+
+        // 步骤3：属性注入
+        // 如果存在循环依赖，这里会触发提前暴露
         applyPropertyValues(beanName, bean, beanDefinition);
 
-        // 步骤3：初始化 Bean
+        // 步骤4：初始化 Bean
         bean = initializeBean(beanName, bean, beanDefinition);
 
-        // 步骤4：注册销毁方法（只有单例 Bean 需要）
+        // 步骤5：注册销毁方法（只有单例 Bean 需要）
         registerDisposableBeanIfNecessary(beanName, bean, beanDefinition);
 
         return bean;
+    }
+
+    /**
+     * 获取早期 Bean 引用
+     * <p>
+     * 这是 ObjectFactory 的实现方法
+     * 在需要提前暴露 Bean 时调用
+     * <p>
+     * 面试考点：
+     * 1. 什么时候调用此方法？
+     *    - 循环依赖场景，其他 Bean 需要当前 Bean 的引用
+     * 2. 为什么要单独一个方法？
+     *    - 提供扩展点，支持 AOP 代理
+     *    - 正常情况返回原始对象
+     *    - AOP 场景返回代理对象（通过 BeanPostProcessor）
+     * 3. 与 BeanPostProcessor 的关系？
+     *    - 可以在这里调用 BeanPostProcessor.getEarlyBeanReference()
+     *    - 实现 AOP 代理对象的提前暴露（后续版本实现）
+     *
+     * @param beanName       Bean 名称
+     * @param beanDefinition Bean 定义
+     * @param bean           Bean 实例
+     * @return Bean 引用（可能是原始对象，也可能是代理对象）
+     */
+    protected Object getEarlyBeanReference(String beanName, BeanDefinition beanDefinition, Object bean) {
+        Object exposedObject = bean;
+
+        // TODO: 后续版本实现 AOP 时，在这里调用 BeanPostProcessor.getEarlyBeanReference()
+        // 示例代码：
+        // for (BeanPostProcessor beanPostProcessor : getBeanPostProcessors()) {
+        //     if (beanPostProcessor instanceof SmartInstantiationAwareBeanPostProcessor) {
+        //         SmartInstantiationAwareBeanPostProcessor processor = ...;
+        //         exposedObject = processor.getEarlyBeanReference(exposedObject, beanName);
+        //     }
+        // }
+
+        return exposedObject;
     }
 
     /**
