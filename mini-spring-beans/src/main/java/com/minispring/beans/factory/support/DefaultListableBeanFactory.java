@@ -4,9 +4,12 @@ import com.minispring.beans.PropertyValue;
 import com.minispring.beans.PropertyValues;
 import com.minispring.beans.exception.BeansException;
 import com.minispring.beans.factory.BeanFactory;
+import com.minispring.beans.factory.DisposableBean;
+import com.minispring.beans.factory.InitializingBean;
 import com.minispring.beans.factory.config.BeanDefinition;
 import com.minispring.beans.factory.config.BeanReference;
 
+import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -55,6 +58,20 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * 3. 为什么需要缓存？避免重复创建，提高性能
      */
     private final Map<String, Object> singletonObjects = new HashMap<>();
+
+    /**
+     * 销毁 Bean 的适配器集合
+     * key: Bean 名称
+     * value: DisposableBeanAdapter 实例
+     * <p>
+     * 面试考点：
+     * 1. 为什么需要单独存储销毁适配器？
+     *    - 容器关闭时需要调用销毁方法
+     *    - 统一管理 DisposableBean 接口和 destroy-method
+     * 2. 只有单例 Bean 才会被管理销毁
+     *    - 原型 Bean 的生命周期由使用者管理
+     */
+    private final Map<String, DisposableBean> disposableBeans = new HashMap<>();
 
     /**
      * Bean 实例化策略
@@ -205,7 +222,8 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      * 完整的 Bean 创建流程（面试重点）：
      * 1. 实例化：创建 Bean 实例
      * 2. 属性注入：填充 Bean 的属性值
-     * 3. 初始化：调用初始化方法（后续实现）
+     * 3. 初始化：调用初始化方法
+     * 4. 注册销毁方法：如果是单例 Bean
      * <p>
      * 面试考点：
      * 1. Bean 的完整生命周期
@@ -224,11 +242,11 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
         // 步骤2：属性注入
         applyPropertyValues(beanName, bean, beanDefinition);
 
-        // 后续步骤（待实现）：
-        // 步骤3：Aware 接口回调
-        // 步骤4：BeanPostProcessor 前置处理
-        // 步骤5：初始化方法调用
-        // 步骤6：BeanPostProcessor 后置处理
+        // 步骤3：初始化 Bean
+        bean = initializeBean(beanName, bean, beanDefinition);
+
+        // 步骤4：注册销毁方法（只有单例 Bean 需要）
+        registerDisposableBeanIfNecessary(beanName, bean, beanDefinition);
 
         return bean;
     }
@@ -298,6 +316,117 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
      */
     public void setInstantiationStrategy(InstantiationStrategy instantiationStrategy) {
         this.instantiationStrategy = instantiationStrategy;
+    }
+
+    // ==================== Bean 初始化方法 ====================
+
+    /**
+     * 初始化 Bean
+     * <p>
+     * Bean 初始化流程（面试重点）：
+     * 1. 调用 Aware 接口方法（后续实现）
+     * 2. 调用 BeanPostProcessor 的前置处理方法（后续实现）
+     * 3. 调用初始化方法：
+     *    - 先调用 InitializingBean 接口的 afterPropertiesSet 方法
+     *    - 再调用自定义的 init-method
+     * 4. 调用 BeanPostProcessor 的后置处理方法（后续实现）
+     * <p>
+     * 面试考点：
+     * 1. 初始化方法的执行顺序
+     * 2. InitializingBean 和 init-method 的区别
+     * 3. 初始化阶段在 Bean 生命周期中的位置
+     *
+     * @param beanName       Bean 名称
+     * @param bean           Bean 实例
+     * @param beanDefinition Bean 定义
+     * @return 初始化后的 Bean 实例
+     */
+    protected Object initializeBean(String beanName, Object bean, BeanDefinition beanDefinition) {
+        // 步骤1：调用 InitializingBean 接口方法
+        if (bean instanceof InitializingBean) {
+            try {
+                ((InitializingBean) bean).afterPropertiesSet();
+            } catch (Exception e) {
+                throw new BeansException("InitializingBean.afterPropertiesSet() 调用失败: " + beanName, e);
+            }
+        }
+
+        // 步骤2：调用自定义 init-method
+        String initMethodName = beanDefinition.getInitMethodName();
+        if (initMethodName != null && !initMethodName.isEmpty()) {
+            try {
+                Method initMethod = beanDefinition.getBeanClass().getMethod(initMethodName);
+                initMethod.invoke(bean);
+            } catch (Exception e) {
+                throw new BeansException("init-method 调用失败: " + beanName + "." + initMethodName, e);
+            }
+        }
+
+        return bean;
+    }
+
+    /**
+     * 注册销毁方法
+     * <p>
+     * 判断 Bean 是否需要注册销毁方法：
+     * 1. 只有单例 Bean 需要注册
+     * 2. 实现了 DisposableBean 接口或配置了 destroy-method
+     * <p>
+     * 面试考点：
+     * 1. 为什么原型 Bean 不注册销毁方法？
+     *    - 原型 Bean 的生命周期由使用者管理
+     *    - 容器不负责销毁原型 Bean
+     * 2. 销毁方法的管理方式
+     *    - 使用适配器模式统一管理
+     *
+     * @param beanName       Bean 名称
+     * @param bean           Bean 实例
+     * @param beanDefinition Bean 定义
+     */
+    protected void registerDisposableBeanIfNecessary(String beanName, Object bean, BeanDefinition beanDefinition) {
+        // 只有单例 Bean 才注册销毁方法
+        if (!beanDefinition.isSingleton()) {
+            return;
+        }
+
+        // 判断是否需要销毁
+        // 1. 实现了 DisposableBean 接口
+        // 2. 配置了 destroy-method
+        if (bean instanceof DisposableBean || beanDefinition.getDestroyMethodName() != null) {
+            // 创建销毁适配器并注册
+            disposableBeans.put(beanName, new DisposableBeanAdapter(bean, beanName, beanDefinition.getDestroyMethodName()));
+        }
+    }
+
+    // ==================== 容器销毁方法 ====================
+
+    /**
+     * 销毁所有单例 Bean
+     * <p>
+     * 容器关闭时调用此方法
+     * 遍历所有注册的销毁适配器，调用销毁方法
+     * <p>
+     * 面试考点：
+     * 1. 销毁顺序：按照注册的逆序销毁（后创建的先销毁）
+     * 2. 异常处理：一个 Bean 销毁失败不影响其他 Bean
+     * 3. 销毁时机：容器关闭时（ApplicationContext.close()）
+     */
+    public void destroySingletons() {
+        // 获取所有需要销毁的 Bean 名称
+        String[] disposableBeanNames = disposableBeans.keySet().toArray(new String[0]);
+
+        // 逆序销毁（后创建的先销毁）
+        for (int i = disposableBeanNames.length - 1; i >= 0; i--) {
+            String beanName = disposableBeanNames[i];
+            DisposableBean disposableBean = disposableBeans.remove(beanName);
+
+            try {
+                disposableBean.destroy();
+            } catch (Exception e) {
+                // 记录异常，但不影响其他 Bean 的销毁
+                System.err.println("销毁 Bean 失败: " + beanName + ", 错误: " + e.getMessage());
+            }
+        }
     }
 
 }
