@@ -147,13 +147,16 @@ public abstract class AbstractAutoProxyCreator implements BeanPostProcessor, Bea
             proxyFactory.setInterfaces(interfaces);
         }
 
-        // 设置 Advisor（目前只支持单个 Advisor，后续可扩展为多个）
-        if (!advisors.isEmpty()) {
-            Advisor advisor = advisors.get(0);
+        // 添加所有匹配的 Advisor
+        for (Advisor advisor : advisors) {
             if (advisor instanceof PointcutAdvisor) {
                 PointcutAdvisor pointcutAdvisor = (PointcutAdvisor) advisor;
-                proxyFactory.setMethodMatcher(pointcutAdvisor.getPointcut().getMethodMatcher());
-                proxyFactory.setMethodInterceptor((MethodInterceptor) pointcutAdvisor.getAdvice());
+                // 设置方法匹配器（使用第一个Advisor的）
+                if (proxyFactory.getMethodMatcher() == null) {
+                    proxyFactory.setMethodMatcher(pointcutAdvisor.getPointcut().getMethodMatcher());
+                }
+                // 添加拦截器
+                proxyFactory.addMethodInterceptor((MethodInterceptor) pointcutAdvisor.getAdvice());
             }
         }
 
