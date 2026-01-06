@@ -22,6 +22,7 @@
         <module>mini-spring-aop</module>
         <module>mini-spring-tx</module>
         <module>mini-spring-web</module>
+        <module>mini-spring-example</module>
     </modules>
 
     <!-- 属性配置 -->
