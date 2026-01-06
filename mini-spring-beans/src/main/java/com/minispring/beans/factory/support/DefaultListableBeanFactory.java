@@ -980,4 +980,66 @@ public class DefaultListableBeanFactory implements BeanFactory, BeanDefinitionRe
         }
     }
 
+    /**
+     * 根据类型获取所有 Bean
+     * <p>
+     * 查找容器中所有符合指定类型的 Bean
+     * <p>
+     * 使用场景：
+     * 1. AOP 自动代理：查找所有 Advisor
+     * 2. 事件机制：查找所有 ApplicationListener
+     * 3. 插件机制：查找所有插件实例
+     * <p>
+     * 实现逻辑：
+     * 1. 遍历所有 BeanDefinition
+     * 2. 判断 Bean 类型是否匹配
+     * 3. 获取或创建 Bean 实例
+     * 4. 返回所有匹配的 Bean
+     *
+     * @param type Bean 类型
+     * @param <T>  泛型类型
+     * @return Bean 名称 → Bean 实例的 Map
+     * @throws BeansException Bean 异常
+     */
+    public <T> Map<String, T> getBeansOfType(Class<T> type) throws BeansException {
+        Map<String, T> result = new HashMap<>();
+
+        // 遍历所有 BeanDefinition
+        String[] beanNames = getBeanDefinitionNames();
+        for (String beanName : beanNames) {
+            BeanDefinition beanDefinition = getBeanDefinition(beanName);
+            if (beanDefinition == null) {
+                continue;
+            }
+
+            // 判断类型是否匹配
+            Class<?> beanClass = beanDefinition.getBeanClass();
+            if (type.isAssignableFrom(beanClass)) {
+                // 获取或创建 Bean 实例
+                @SuppressWarnings("unchecked")
+                T bean = (T) getBean(beanName);
+                result.put(beanName, bean);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 注册单例 Bean
+     * <p>
+     * 直接将已创建的 Bean 实例注册到单例缓存中
+     * <p>
+     * 使用场景：
+     * 1. 手动注册外部创建的对象
+     * 2. 测试场景中快速注册 Bean
+     * 3. 框架内部注册特殊 Bean
+     *
+     * @param beanName Bean 名称
+     * @param singletonObject 单例对象
+     */
+    public void registerSingleton(String beanName, Object singletonObject) {
+        addSingleton(beanName, singletonObject);
+    }
+
 }
