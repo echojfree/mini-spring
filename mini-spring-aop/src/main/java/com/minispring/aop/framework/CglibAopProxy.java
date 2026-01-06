@@ -3,9 +3,10 @@ package com.minispring.aop.framework;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
-import org.aopalliance.intercept.MethodInvocation;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * CglibAopProxy - CGLIB 动态代理实现
@@ -30,7 +31,7 @@ import java.lang.reflect.Method;
  * 3. 方法拦截流程
  *    - 1. intercept() 方法被调用
  *    - 2. 检查方法是否匹配切点
- *    - 3. 如果匹配，执行拦截器（通知）
+ *    - 3. 如果匹配，执行拦截器链（通知）
  *    - 4. 如果不匹配，使用 methodProxy.invoke() 调用目标方法
  * <p>
  * 4. 与 JDK 动态代理的对比
@@ -93,70 +94,64 @@ public class CglibAopProxy implements AopProxy {
         @Override
         public Object intercept(Object proxy, Method method, Object[] args, MethodProxy methodProxy)
                 throws Throwable {
-            // 创建 CglibMethodInvocation 对象
-            CglibMethodInvocation methodInvocation = new CglibMethodInvocation(
-                    advised.getTarget(),
-                    method,
-                    args,
-                    methodProxy
-            );
 
             // 检查方法是否匹配切点
-            if (advised.getMethodMatcher().matches(method, advised.getTarget().getClass())) {
-                // 匹配成功，执行拦截器（通知）
-                return advised.getMethodInterceptor().invoke(methodInvocation);
+            if (advised.getMethodMatcher() != null &&
+                    advised.getMethodMatcher().matches(method, advised.getTarget().getClass())) {
+
+                // 获取拦截器链
+                List<org.aopalliance.intercept.MethodInterceptor> interceptors = new ArrayList<>();
+
+                // 如果有拦截器链，使用拦截器链
+                if (advised.getMethodInterceptors() != null && !advised.getMethodInterceptors().isEmpty()) {
+                    interceptors.addAll(advised.getMethodInterceptors());
+                }
+                // 否则使用单个拦截器（向后兼容）
+                else if (advised.getMethodInterceptor() != null) {
+                    interceptors.add(advised.getMethodInterceptor());
+                }
+
+                // 如果有拦截器，使用拦截器链执行
+                if (!interceptors.isEmpty()) {
+                    // 创建 CglibMethodInvocation 对象，支持拦截器链
+                    CglibMethodInvocation methodInvocation = new CglibMethodInvocation(
+                            advised.getTarget(),
+                            method,
+                            args,
+                            methodProxy,
+                            interceptors
+                    );
+                    // 执行拦截器链
+                    return methodInvocation.proceed();
+                }
             }
 
-            // 不匹配，直接调用目标方法
-            return methodInvocation.proceed();
+            // 不匹配或没有拦截器，直接调用目标方法
+            return methodProxy.invoke(advised.getTarget(), args);
         }
     }
 
     /**
      * CglibMethodInvocation - CGLIB 方法调用
      * <p>
-     * 实现 MethodInvocation 接口
-     * 封装 CGLIB 方法调用信息
+     * 继承 ReflectiveMethodInvocation，增加对 MethodProxy 的支持
      * 使用 MethodProxy 提高性能
      */
-    private static class CglibMethodInvocation implements MethodInvocation {
+    private static class CglibMethodInvocation extends ReflectiveMethodInvocation {
 
-        private final Object target;
-        private final Method method;
-        private final Object[] arguments;
         private final MethodProxy methodProxy;
 
-        public CglibMethodInvocation(Object target, Method method, Object[] arguments, MethodProxy methodProxy) {
-            this.target = target;
-            this.method = method;
-            this.arguments = arguments;
+        public CglibMethodInvocation(Object target, Method method, Object[] arguments,
+                                      MethodProxy methodProxy,
+                                      List<org.aopalliance.intercept.MethodInterceptor> interceptors) {
+            super(target, method, arguments, interceptors);
             this.methodProxy = methodProxy;
         }
 
         @Override
-        public Method getMethod() {
-            return method;
-        }
-
-        @Override
-        public Object[] getArguments() {
-            return arguments;
-        }
-
-        @Override
-        public Object proceed() throws Throwable {
+        protected Object invokeJoinpoint() throws Throwable {
             // 使用 MethodProxy 调用目标方法，性能更好
             return methodProxy.invoke(target, arguments);
-        }
-
-        @Override
-        public Object getThis() {
-            return target;
-        }
-
-        @Override
-        public java.lang.reflect.AccessibleObject getStaticPart() {
-            return method;
         }
     }
 

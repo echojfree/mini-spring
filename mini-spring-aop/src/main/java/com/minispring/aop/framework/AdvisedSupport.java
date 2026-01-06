@@ -2,6 +2,9 @@ package com.minispring.aop.framework;
 
 import org.aopalliance.intercept.MethodInterceptor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * AdvisedSupport - AOP 代理配置支持类
  * <p>
@@ -17,6 +20,7 @@ import org.aopalliance.intercept.MethodInterceptor;
  * 2. 配置项说明
  *    - targetSource：目标对象（被代理对象）
  *    - methodInterceptor：方法拦截器（通知）
+ *    - methodInterceptors：拦截器链（支持多个通知）
  *    - methodMatcher：方法匹配器（切点）
  *    - proxyTargetClass：是否使用 CGLIB 代理
  * <p>
@@ -47,9 +51,14 @@ public class AdvisedSupport {
     private Class<?>[] interfaces;
 
     /**
-     * 方法拦截器（通知）
+     * 方法拦截器（通知）- 单个拦截器
      */
     private MethodInterceptor methodInterceptor;
+
+    /**
+     * 拦截器链 - 支持多个拦截器
+     */
+    private List<MethodInterceptor> methodInterceptors = new ArrayList<>();
 
     /**
      * 方法匹配器（切点）
@@ -86,6 +95,18 @@ public class AdvisedSupport {
 
     public void setMethodInterceptor(MethodInterceptor methodInterceptor) {
         this.methodInterceptor = methodInterceptor;
+    }
+
+    public List<MethodInterceptor> getMethodInterceptors() {
+        return methodInterceptors;
+    }
+
+    public void setMethodInterceptors(List<MethodInterceptor> methodInterceptors) {
+        this.methodInterceptors = methodInterceptors;
+    }
+
+    public void addMethodInterceptor(MethodInterceptor interceptor) {
+        this.methodInterceptors.add(interceptor);
     }
 
     public com.minispring.aop.MethodMatcher getMethodMatcher() {

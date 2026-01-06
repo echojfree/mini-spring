@@ -1,11 +1,12 @@
 package com.minispring.aop.framework;
 
 import org.aopalliance.intercept.MethodInterceptor;
-import org.aopalliance.intercept.MethodInvocation;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * JdkDynamicAopProxy - JDK 动态代理实现
@@ -29,7 +30,7 @@ import java.lang.reflect.Proxy;
  * 3. 方法拦截流程
  *    - 1. invoke() 方法被调用
  *    - 2. 检查方法是否匹配切点
- *    - 3. 如果匹配，执行拦截器（通知）
+ *    - 3. 如果匹配，执行拦截器链（通知）
  *    - 4. 如果不匹配，直接调用目标方法
  * <p>
  * 4. 与 CGLIB 的对比
@@ -38,10 +39,10 @@ import java.lang.reflect.Proxy;
  *    - JDK：性能略优（Java 8+）
  *    - CGLIB：功能更强大，不需要接口
  * <p>
- * 5. ReflectiveMethodInvocation
- *    - 封装方法调用信息
- *    - 实现 MethodInvocation 接口
- *    - 支持拦截器链调用
+ * 5. 拦截器链执行
+ *    - 使用 ReflectiveMethodInvocation 管理拦截器链
+ *    - 支持多个拦截器按顺序执行
+ *    - 责任链模式实现拦截器链调用
  *
  * @author mini-spring
  */
@@ -68,75 +69,35 @@ public class JdkDynamicAopProxy implements AopProxy, InvocationHandler {
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         // 检查方法是否匹配切点
-        if (advised.getMethodMatcher().matches(method, advised.getTarget().getClass())) {
-            // 匹配成功，执行拦截器（通知）
-            MethodInterceptor methodInterceptor = advised.getMethodInterceptor();
-            // 创建 MethodInvocation 对象
-            return methodInterceptor.invoke(new ReflectiveMethodInvocation(
-                    advised.getTarget(),
-                    method,
-                    args
-            ));
+        if (advised.getMethodMatcher() != null &&
+                advised.getMethodMatcher().matches(method, advised.getTarget().getClass())) {
+
+            // 获取拦截器链
+            List<MethodInterceptor> interceptors = new ArrayList<>();
+
+            // 如果有拦截器链，使用拦截器链
+            if (advised.getMethodInterceptors() != null && !advised.getMethodInterceptors().isEmpty()) {
+                interceptors.addAll(advised.getMethodInterceptors());
+            }
+            // 否则使用单个拦截器（向后兼容）
+            else if (advised.getMethodInterceptor() != null) {
+                interceptors.add(advised.getMethodInterceptor());
+            }
+
+            // 如果有拦截器，使用拦截器链执行
+            if (!interceptors.isEmpty()) {
+                // 创建 ReflectiveMethodInvocation 对象，支持拦截器链
+                return new ReflectiveMethodInvocation(
+                        advised.getTarget(),
+                        method,
+                        args,
+                        interceptors
+                ).proceed();
+            }
         }
-        // 不匹配，直接调用目标方法
+
+        // 不匹配或没有拦截器，直接调用目标方法
         return method.invoke(advised.getTarget(), args);
-    }
-
-    /**
-     * ReflectiveMethodInvocation - 反射方法调用
-     * <p>
-     * 实现 MethodInvocation 接口
-     * 封装目标方法的调用信息
-     * 支持拦截器链的调用
-     */
-    private static class ReflectiveMethodInvocation implements MethodInvocation {
-
-        /**
-         * 目标对象
-         */
-        private final Object target;
-
-        /**
-         * 目标方法
-         */
-        private final Method method;
-
-        /**
-         * 方法参数
-         */
-        private final Object[] arguments;
-
-        public ReflectiveMethodInvocation(Object target, Method method, Object[] arguments) {
-            this.target = target;
-            this.method = method;
-            this.arguments = arguments;
-        }
-
-        @Override
-        public Method getMethod() {
-            return method;
-        }
-
-        @Override
-        public Object[] getArguments() {
-            return arguments;
-        }
-
-        @Override
-        public Object proceed() throws Throwable {
-            // 调用目标方法
-            return method.invoke(target, arguments);
-        }
-
-        @Override
-        public Object getThis() {
-            return target;
-        }
-
-        @Override
-        public java.lang.reflect.AccessibleObject getStaticPart() {
-            return method;
-        }
     }
 
 }
