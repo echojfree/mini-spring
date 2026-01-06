@@ -704,15 +704,15 @@ ExceptionHandlerExceptionResolver
 - [x] 4.7 事务自动配置
 
 **第五阶段：Web MVC**
-- [ ] 5.1 DispatcherServlet
-- [ ] 5.2 HandlerMapping
-- [ ] 5.3 HandlerAdapter
-- [ ] 5.4 参数解析
-- [ ] 5.5 视图解析
-- [ ] 5.6 ModelAndView
-- [ ] 5.7 拦截器
-- [ ] 5.8 RESTful 支持
-- [ ] 5.9 异常处理
+- [x] 5.1 DispatcherServlet
+- [x] 5.2 HandlerMapping
+- [x] 5.3 HandlerAdapter
+- [x] 5.4 参数解析
+- [x] 5.5 视图解析
+- [x] 5.6 ModelAndView
+- [x] 5.7 拦截器
+- [x] 5.8 RESTful 支持
+- [x] 5.9 异常处理
 
 ---
 

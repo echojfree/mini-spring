@@ -479,4 +479,39 @@ public abstract class AbstractApplicationContext implements ConfigurableApplicat
         }
     }
 
+    @Override
+    public String[] getBeanDefinitionNames() {
+        return getBeanFactory().getBeanDefinitionNames();
+    }
+
+    @Override
+    public Class<?> getType(String name) {
+        try {
+            com.minispring.beans.factory.config.BeanDefinition bd = getBeanFactory().getBeanDefinition(name);
+            return bd.getBeanClass();
+        } catch (BeansException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public <T> java.util.Map<String, T> getBeansOfType(Class<T> type) {
+        java.util.Map<String, T> result = new java.util.HashMap<>();
+        String[] beanNames = getBeanDefinitionNames();
+
+        for (String beanName : beanNames) {
+            try {
+                Class<?> beanType = getType(beanName);
+                if (beanType != null && type.isAssignableFrom(beanType)) {
+                    T bean = getBean(beanName, type);
+                    result.put(beanName, bean);
+                }
+            } catch (BeansException e) {
+                // Skip beans that can't be instantiated
+            }
+        }
+
+        return result;
+    }
+
 }

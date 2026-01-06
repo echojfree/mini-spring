@@ -21,6 +21,7 @@
         <module>mini-spring-context</module>
         <module>mini-spring-aop</module>
         <module>mini-spring-tx</module>
+        <module>mini-spring-web</module>
     </modules>
 
     <!-- 属性配置 -->

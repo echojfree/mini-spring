@@ -108,4 +108,19 @@ public interface ApplicationContext extends BeanFactory, ApplicationEventPublish
      */
     void registerShutdownHook();
 
+    /**
+     * 获取所有 BeanDefinition 名称
+     */
+    String[] getBeanDefinitionNames();
+
+    /**
+     * 获取 Bean 的类型
+     */
+    Class<?> getType(String name);
+
+    /**
+     * 获取指定类型的所有 Bean
+     */
+    <T> java.util.Map<String, T> getBeansOfType(Class<T> type);
+
 }
