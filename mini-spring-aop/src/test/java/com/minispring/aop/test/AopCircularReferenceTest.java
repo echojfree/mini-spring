@@ -4,10 +4,10 @@ import com.minispring.aop.AspectJExpressionPointcut;
 import com.minispring.aop.MethodBeforeAdvice;
 import com.minispring.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator;
 import com.minispring.beans.factory.config.BeanDefinition;
+import com.minispring.beans.factory.config.BeanReference;
 import com.minispring.beans.factory.support.DefaultListableBeanFactory;
 import com.minispring.beans.PropertyValue;
 import com.minispring.beans.PropertyValues;
-import com.minispring.beans.BeanReference;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -74,39 +74,31 @@ public class AopCircularReferenceTest {
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
 
         // 2. 注册 ServiceA (带 AOP)
-        BeanDefinition serviceADef = new BeanDefinition();
-        serviceADef.setBeanClass(ServiceA.class);
         PropertyValues pvA = new PropertyValues();
         pvA.addPropertyValue(new PropertyValue("serviceB", new BeanReference("serviceB")));
-        serviceADef.setPropertyValues(pvA);
+        BeanDefinition serviceADef = new BeanDefinition(ServiceA.class, pvA);
         beanFactory.registerBeanDefinition("serviceA", serviceADef);
 
         // 3. 注册 ServiceB
-        BeanDefinition serviceBDef = new BeanDefinition();
-        serviceBDef.setBeanClass(ServiceB.class);
         PropertyValues pvB = new PropertyValues();
         pvB.addPropertyValue(new PropertyValue("serviceA", new BeanReference("serviceA")));
-        serviceBDef.setPropertyValues(pvB);
+        BeanDefinition serviceBDef = new BeanDefinition(ServiceB.class, pvB);
         beanFactory.registerBeanDefinition("serviceB", serviceBDef);
 
         // 4. 注册 Advisor (只对 ServiceA 生效)
         AspectJExpressionPointcut pointcut = new AspectJExpressionPointcut(
-                "execution(* com.minispring.aop.test.ServiceA.*(..))"
+                "execution(* com.minispring.aop.test.AopCircularReferenceTest.ServiceA.*(..))"
         );
         MethodBeforeAdvice advice = (method, args, target) -> {
             System.out.println("[AOP通知] 方法: " + method.getName());
         };
-        beanFactory.registerSingleton("advisor",
-            new com.minispring.aop.PointcutAdvisor() {
-                @Override
-                public com.minispring.aop.Advice getAdvice() {
-                    return new com.minispring.aop.framework.adapter.MethodBeforeAdviceInterceptor(advice);
-                }
-                @Override
-                public com.minispring.aop.Pointcut getPointcut() {
-                    return pointcut;
-                }
-            });
+
+        // 使用 AspectJPointcutAdvisor 代替匿名类
+        com.minispring.aop.framework.adapter.MethodBeforeAdviceInterceptor interceptor =
+            new com.minispring.aop.framework.adapter.MethodBeforeAdviceInterceptor(advice);
+        com.minispring.aop.aspectj.AspectJPointcutAdvisor advisor =
+            new com.minispring.aop.aspectj.AspectJPointcutAdvisor(pointcut, interceptor);
+        beanFactory.registerSingleton("advisor", advisor);
 
         // 5. 注册自动代理创建器
         DefaultAdvisorAutoProxyCreator autoProxyCreator = new DefaultAdvisorAutoProxyCreator();
@@ -141,49 +133,49 @@ public class AopCircularReferenceTest {
         System.out.println("\n✅ 测试通过：AOP 循环依赖正确解决\n");
     }
 
-}
+    /**
+     * ServiceA - 测试服务 A
+     */
+    public static class ServiceA {
+        private ServiceB serviceB;
 
-/**
- * ServiceA - 测试服务 A
- */
-class ServiceA {
-    private ServiceB serviceB;
+        public void setServiceB(ServiceB serviceB) {
+            this.serviceB = serviceB;
+            System.out.println("  ServiceA.setServiceB(): " + (serviceB != null ? serviceB.getClass().getName() : "null"));
+        }
 
-    public void setServiceB(ServiceB serviceB) {
-        this.serviceB = serviceB;
-        System.out.println("  ServiceA.setServiceB(): " + (serviceB != null ? serviceB.getClass().getName() : "null"));
+        public ServiceB getServiceB() {
+            return serviceB;
+        }
+
+        public void doSomething() {
+            System.out.println("  ServiceA.doSomething() 执行");
+        }
     }
 
-    public ServiceB getServiceB() {
-        return serviceB;
+    /**
+     * ServiceB - 测试服务 B
+     */
+    public static class ServiceB {
+        private ServiceA serviceA;
+
+        public void setServiceA(ServiceA serviceA) {
+            this.serviceA = serviceA;
+            System.out.println("  ServiceB.setServiceA(): " + (serviceA != null ? serviceA.getClass().getName() : "null"));
+        }
+
+        public ServiceA getServiceA() {
+            return serviceA;
+        }
+
+        public void doSomething() {
+            System.out.println("  ServiceB.doSomething() 执行");
+        }
+
+        public void callServiceA() {
+            System.out.println("  ServiceB 调用 ServiceA:");
+            serviceA.doSomething();
+        }
     }
 
-    public void doSomething() {
-        System.out.println("  ServiceA.doSomething() 执行");
-    }
-}
-
-/**
- * ServiceB - 测试服务 B
- */
-class ServiceB {
-    private ServiceA serviceA;
-
-    public void setServiceA(ServiceA serviceA) {
-        this.serviceA = serviceA;
-        System.out.println("  ServiceB.setServiceA(): " + (serviceA != null ? serviceA.getClass().getName() : "null"));
-    }
-
-    public ServiceA getServiceA() {
-        return serviceA;
-    }
-
-    public void doSomething() {
-        System.out.println("  ServiceB.doSomething() 执行");
-    }
-
-    public void callServiceA() {
-        System.out.println("  ServiceB 调用 ServiceA:");
-        serviceA.doSomething();
-    }
 }
